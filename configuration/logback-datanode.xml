@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <appender class="ch.qos.logback.core.rolling.RollingFileAppender" name="D">
+    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+      <pattern>${LOG_PATTERN}</pattern>
+    </encoder>
+    <file>${LOG_HOME}/datanode-debug.log</file>
+    <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+      <level>DEBUG</level>
+    </filter>
+    <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+      <FileNamePattern>${LOG_HOME}/datanode-debug.%d{yyyy-MM-dd}.%i.log</FileNamePattern>
+      <maxFileSize>500MB</maxFileSize>
+    </rollingPolicy>
+  </appender>
+  <appender class="ch.qos.logback.core.rolling.RollingFileAppender" name="I">
+    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+      <pattern>${LOG_PATTERN}</pattern>
+    </encoder>
+    <file>${LOG_HOME}/datanode-info.log</file>
+    <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+      <level>INFO</level>
+    </filter>
+    <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+      <FileNamePattern>${LOG_HOME}/datanode-info.%d{yyyy-MM-dd}.%i.log</FileNamePattern>
+      <maxFileSize>500MB</maxFileSize>
+    </rollingPolicy>
+  </appender>
+
+  <appender class="ch.qos.logback.core.rolling.RollingFileAppender" name="E">
+    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+      <pattern>${LOG_PATTERN}</pattern>
+    </encoder>
+    <file>${LOG_HOME}/datanode-error.log</file>
+    <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+      <level>ERROR</level>
+    </filter>
+    <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+      <FileNamePattern>${LOG_HOME}/datanode-error.%d{yyyy-MM-dd}.%i.log</FileNamePattern>
+      <maxFileSize>500MB</maxFileSize>
+    </rollingPolicy>
+  </appender>
+
+  <appender class="ch.qos.logback.core.ConsoleAppender" name="STDOUT">
+    <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+      <pattern>${LOG_PATTERN}</pattern>
+    </encoder>
+  </appender>
+
+  <property name="LOG_HOME" value="${user.dir}/logs"/>
+
+
+  <property name="LOG_PATTERN"
+    value="%d{yyyy-MM-dd HH:mm:ss.SSS} %X{logger_id} %-5level [%thread] %c{1}:%L - %msg%n"/>
+
+  <root level="INFO">
+    <appender-ref ref="D"/>
+    <appender-ref ref="I"/>
+    <appender-ref ref="E"/>
+    <appender-ref ref="STDOUT"/>
+  </root>
+
+</configuration>

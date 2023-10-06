@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns="http://maven.apache.org/POM/4.0.0"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <artifactId>liteHDFS</artifactId>
+
+  <build>
+    <plugins>
+      <plugin>
+        <artifactId>maven-deploy-plugin</artifactId>
+        <!--低于2.8.2版本deploy报错：Deployment failed: repository element was not specified in the POM inside
+        distributionManagement element or in -DaltDeploymentRepository=id::layout::url parameter-->
+        <version>2.8.2</version>
+      </plugin>
+    </plugins>
+  </build>
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <artifactId>slf4j-log4j12</artifactId>
+        <groupId>org.slf4j</groupId>
+        <scope>compile</scope>
+        <version>1.7.25</version>
+      </dependency>
+
+      <!-- https://mvnrepository.com/artifact/log4j/log4j -->
+      <dependency>
+        <artifactId>log4j</artifactId>
+        <groupId>log4j</groupId>
+        <version>1.2.17</version>
+      </dependency>
+
+
+      <!-- https://mvnrepository.com/artifact/org.slf4j/slf4j-api -->
+      <dependency>
+        <artifactId>slf4j-api</artifactId>
+        <groupId>org.slf4j</groupId>
+        <scope>compile</scope>
+        <version>1.7.25</version>
+      </dependency>
+      <!-- https://mvnrepository.com/artifact/org.slf4j/slf4j-nop -->
+      <dependency>
+        <artifactId>slf4j-simple</artifactId>
+        <groupId>org.slf4j</groupId>
+        <version>1.7.25</version>
+      </dependency>
+      <dependency>
+        <artifactId>slf4j-nop</artifactId>
+        <groupId>org.slf4j</groupId>
+        <version>1.7.6</version>
+      </dependency>
+      <dependency>
+        <artifactId>logback-core</artifactId>
+        <groupId>ch.qos.logback</groupId>
+        <version>1.2.3</version>
+      </dependency>
+      <dependency>
+        <artifactId>logback-classic</artifactId>
+        <exclusions>
+          <exclusion>
+            <artifactId>logback-core</artifactId>
+            <groupId>ch.qos.logback</groupId>
+          </exclusion>
+          <exclusion>
+            <artifactId>slf4j-api</artifactId>
+            <groupId>org.slf4j</groupId>
+          </exclusion>
+        </exclusions>
+        <groupId>ch.qos.logback</groupId>
+        <version>1.2.3</version>
+      </dependency>
+      <dependency>
+        <artifactId>lombok</artifactId>
+        <groupId>org.projectlombok</groupId>
+        <version>${lombok.version}</version>
+      </dependency>
+      <dependency>
+        <artifactId>fastjson</artifactId>
+        <groupId>com.alibaba</groupId>
+        <version>1.2.75</version>
+      </dependency>
+      <dependency>
+        <artifactId>protobuf-java</artifactId>
+        <groupId>com.google.protobuf</groupId>
+        <version>${protobuf.version}</version>
+      </dependency>
+      <dependency>
+        <artifactId>netty-all</artifactId>
+        <groupId>io.netty</groupId>
+        <version>${netty.version}</version>
+      </dependency>
+      <dependency>
+        <artifactId>commons-codec</artifactId>
+        <groupId>commons-codec</groupId>
+        <version>1.14</version>
+      </dependency>
+      <dependency>
+        <artifactId>commons-collections4</artifactId>
+        <groupId>org.apache.commons</groupId>
+        <version>4.4</version>
+      </dependency>
+      <dependency>
+        <artifactId>commons-io</artifactId>
+        <groupId>commons-io</groupId>
+        <version>2.5</version>
+      </dependency>
+      <dependency>
+        <artifactId>commons-lang3</artifactId>
+        <groupId>org.apache.commons</groupId>
+        <version>3.3.1</version>
+      </dependency>
+      <dependency>
+        <artifactId>guava</artifactId>
+        <groupId>com.google.guava</groupId>
+        <version>29.0-jre</version>
+      </dependency>
+
+      <dependency>
+        <artifactId>junit</artifactId>
+        <groupId>junit</groupId>
+        <scope>test</scope>
+        <version>${junit.version}</version>
+      </dependency>
+
+      <dependency>
+        <artifactId>tomcat-embed-core</artifactId>
+        <groupId>org.apache.tomcat.embed</groupId>
+        <version>8.5.37</version>
+      </dependency>
+
+      <dependency>
+        <artifactId>tomcat-embed-jasper</artifactId>
+        <groupId>org.apache.tomcat.embed</groupId>
+        <version>8.5.37</version>
+      </dependency>
+
+      <dependency>
+        <artifactId>jopt-simple</artifactId>
+        <groupId>net.sf.jopt-simple</groupId>
+        <version>5.0.4</version>
+      </dependency>
+
+      <dependency>
+        <artifactId>simpleclient</artifactId>
+        <groupId>io.prometheus</groupId>
+        <version>0.11.0</version>
+      </dependency>
+      <!-- Hotspot JVM metrics-->
+      <dependency>
+        <artifactId>simpleclient_hotspot</artifactId>
+        <groupId>io.prometheus</groupId>
+        <version>0.11.0</version>
+      </dependency>
+      <dependency>
+        <artifactId>junit-jupiter</artifactId>
+        <groupId>org.junit.jupiter</groupId>
+        <scope>test</scope>
+        <version>RELEASE</version>
+      </dependency>
+
+    </dependencies>
+  </dependencyManagement>
+  <groupId>com.rothsCode</groupId>
+  <modelVersion>4.0.0</modelVersion>
+
+  <modules>
+    <module>nameNode</module>
+    <module>common</module>
+    <module>dataNode</module>
+    <module>client</module>
+  </modules>
+
+  <packaging>pom</packaging>
+
+
+  <properties>
+    <grpc.version>1.3.0</grpc.version>
+    <java.version>1.8</java.version>
+    <junit.version>4.12</junit.version>
+    <lombok.version>1.18.6</lombok.version>
+    <maven.compiler.compilerVersion>1.8</maven.compiler.compilerVersion>
+    <maven.compiler.source>1.8</maven.compiler.source>
+
+    <maven.compiler.target>1.8</maven.compiler.target>
+    <netty.version>4.1.42.Final</netty.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    <protobuf.version>3.3.0</protobuf.version>
+    <rothsCode.dfs.client.version>1.0</rothsCode.dfs.client.version>
+    <rothsCode.dfs.common.version>1.0.0-SNAPSHOT</rothsCode.dfs.common.version>
+    <rothsCode.dfs.datanode.version>1.0</rothsCode.dfs.datanode.version>
+    <rothsCode.dfs.namenode.version>1.0</rothsCode.dfs.namenode.version>
+  </properties>
+
+
+  <version>1.0-SNAPSHOT</version>
+
+</project>
