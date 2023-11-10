@@ -3,37 +3,7 @@
   xmlns="http://maven.apache.org/POM/4.0.0"
   xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <artifactId>client</artifactId>
-  <build>
-    <plugins>
-      <plugin>
-        <artifactId>maven-assembly-plugin</artifactId>
-        <configuration>
-          <appendAssemblyId>false</appendAssemblyId>
-          <descriptor>src/main/resources/assembly.xml</descriptor>
-          <!-- 配置描述符文件 -->
-          <finalName>${artifactId}-${version}</finalName>
-        </configuration>
-        <groupId>org.apache.maven.plugins</groupId>
-        <version>2.6</version>
-      </plugin>
-      <plugin>
-        <artifactId>maven-source-plugin</artifactId>
-        <configuration>
-          <attach>true</attach>
-        </configuration>
-        <executions>
-          <execution>
-            <goals>
-              <goal>jar</goal>
-            </goals>
-            <phase>compile</phase>
-          </execution>
-        </executions>
-        <groupId>org.apache.maven.plugins</groupId>
-        <version>3.0.1</version>
-      </plugin>
-    </plugins>
-  </build>
+
   <dependencies>
     <dependency>
       <artifactId>common</artifactId>
@@ -43,17 +13,14 @@
     <dependency>
       <artifactId>fastjson</artifactId>
       <groupId>com.alibaba</groupId>
-      <optional>true</optional>
     </dependency>
     <dependency>
       <artifactId>slf4j-api</artifactId>
       <groupId>org.slf4j</groupId>
-      <optional>true</optional>
     </dependency>
     <dependency>
       <artifactId>logback-core</artifactId>
       <groupId>ch.qos.logback</groupId>
-      <optional>true</optional>
     </dependency>
     <dependency>
       <artifactId>logback-classic</artifactId>
@@ -63,7 +30,6 @@
     <dependency>
       <artifactId>lombok</artifactId>
       <groupId>org.projectlombok</groupId>
-      <optional>true</optional>
     </dependency>
     <dependency>
       <artifactId>junit-jupiter</artifactId>
@@ -72,19 +38,12 @@
       <scope>test</scope>
     </dependency>
     <dependency>
-      <artifactId>jopt-simple</artifactId>
-      <groupId>net.sf.jopt-simple</groupId>
-      <optional>true</optional>
-    </dependency>
-    <dependency>
-      <artifactId>jline</artifactId>
-      <groupId>org.jline</groupId>
-      <optional>true</optional>
-      <version>3.16.0</version>
-    </dependency>
-    <dependency>
       <artifactId>junit</artifactId>
       <groupId>junit</groupId>
+    </dependency>
+    <dependency>
+      <artifactId>hutool-all</artifactId>
+      <groupId>cn.hutool</groupId>
     </dependency>
   </dependencies>
   <modelVersion>4.0.0</modelVersion>
