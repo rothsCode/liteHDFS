@@ -38,7 +38,7 @@ public class NameNodeContainer implements LifeCycle {
     FileDirectoryTree fileDirectoryTree = new FileDirectoryTree();
     DiskFileSystem diskFileSystem = new DiskFileSystem(nameNodeConfig, fileDirectoryTree);
     //初始化镜像
-    diskFileSystem.loadDiskParseData();
+    diskFileSystem.recoverFileImage();
     DefaultScheduler defaultScheduler = new DefaultScheduler("nameNodeBackupsScheduler");
     //用户管理器
     UserManager userManager = new UserManager(defaultScheduler);

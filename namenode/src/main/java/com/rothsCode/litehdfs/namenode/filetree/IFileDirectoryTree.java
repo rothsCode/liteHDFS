@@ -1,6 +1,7 @@
 package com.rothsCode.litehdfs.namenode.filetree;
 
 import com.rothsCode.litehdfs.common.netty.request.FileInfo;
+import java.nio.ByteBuffer;
 import java.util.List;
 
 /**
@@ -32,7 +33,7 @@ public interface IFileDirectoryTree {
 
   FileInfo getFileInfoByPath(String path);
 
-  byte[] getFsImage();
+  ByteBuffer getFsImage();
 
-  void recoverFs(byte[] fsImage);
+  void recoverFs(ByteBuffer byteBuffer);
 }

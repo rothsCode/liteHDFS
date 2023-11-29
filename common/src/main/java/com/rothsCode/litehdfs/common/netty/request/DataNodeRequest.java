@@ -1,5 +1,6 @@
 package com.rothsCode.litehdfs.common.netty.request;
 
+import com.rothsCode.litehdfs.common.protoc.ProtoFileInfo;
 import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -23,7 +24,7 @@ public class DataNodeRequest {
   private int healthyStatus;
   private long usedSpaceSize;
   private long remainSpaceSize;
-  private List<FileInfo> fileInfos;
+  private List<ProtoFileInfo> fileInfos;
 
 
 }

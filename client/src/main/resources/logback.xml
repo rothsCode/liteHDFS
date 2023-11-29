@@ -87,7 +87,7 @@
     </rollingPolicy>
   </appender>
   <contextName>${APP_NAME}</contextName>
-  <logger level="debug" name="io.netty"/>
+  <logger level="info" name="io.netty"/>
   <!-- 控制台日志输出 -->
   <logger level="info" name="org.asynchttpclient"/>
   <!-- 滚动记录文件，先将日志记录到指定文件，当符合某个条件时，将日志记录到其他文件 -->

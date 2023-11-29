@@ -1,7 +1,7 @@
 package com.rothsCode.litehdfs.client.fileclient;
 
-import cn.hutool.core.io.FileUtil;
 import com.alibaba.fastjson.JSONObject;
+import com.rothsCode.litehdfs.client.ClientConfig;
 import com.rothsCode.litehdfs.common.enums.FileTransferType;
 import com.rothsCode.litehdfs.common.enums.PacketType;
 import com.rothsCode.litehdfs.common.file.FileAppender;
@@ -46,9 +46,9 @@ public class DownFileDataNodeClient {
   /**
    * 下载文件
    */
-  public void downBlockFile(String fileName, String blockFileName, String localDownloadPath,
+  public void downBlockFile(String fileName, String blockFileName, ClientConfig clientConfig,
       boolean lastBlock) {
-    cacheFileNameForCallback(fileName, blockFileName, localDownloadPath);
+    cacheFileNameForCallback(fileName, blockFileName, clientConfig.getLocalDownloadPath());
     //异步回调处理文件流
     ClientTransferFileInfo clientTransferFileInfo = ClientTransferFileInfo.builder()
         .fileName(blockFileName).build();
@@ -57,7 +57,7 @@ public class DownFileDataNodeClient {
             PacketType.GET_FILE.value);
     fileNameDataNodeClientMap.get(blockFileName).send(getFilePacket);
     //如果是最后一个block则做合并文件处理
-    mergeBlockFile(fileName, localDownloadPath, lastBlock);
+    mergeBlockFile(fileName, clientConfig, lastBlock);
   }
 
   private void cacheFileNameForCallback(String fileName, String blockFileName,
@@ -79,11 +79,12 @@ public class DownFileDataNodeClient {
     downFileCompleteMap.put(fileName, completeBlockCount);
   }
 
-  private void mergeBlockFile(String fileName, String localDownloadPath, boolean lastBlock) {
+  private void mergeBlockFile(String fileName, ClientConfig clientConfig, boolean lastBlock) {
     List<String> blockFileNames;
     if (lastBlock) {
+      log.debug("{}:down lastBlock", fileName);
       //分段下载完毕后再做文件合并
-      int downFileTimeOutSecond = 60;
+      int downFileTimeOutSecond = clientConfig.getDownFileTimeOutSeconds();
       do {
         try {
           downFileTimeOutSecond--;
@@ -94,18 +95,19 @@ public class DownFileDataNodeClient {
         } catch (InterruptedException e) {
         }
       } while (downFileCompleteMap.get(fileName).get() > 0);
+      log.debug("{}:start mergeBlockFile", fileName);
       blockFileNames = fileNameToBlockNameMap.get(fileName);
-      String suffixFileName = StringUtils.substringAfterLast(fileName, "/");
-      FileAppender targetFileAppender = new FileAppender(localDownloadPath, suffixFileName);
+      FileAppender targetFileAppender = new FileAppender(clientConfig.getLocalDownloadPath(),
+          fileName);
       for (String blockName : blockFileNames) {
         //释放客户端
         fileNameDataNodeClientMap.get(blockName).shutDown();
         fileNameDataNodeClientMap.remove(blockName);
         FileAppender blockFileAppender = blockFileAppenderMap.remove(blockName);
-        blockFileAppender.transferChannel(targetFileAppender);
-        blockFileAppender.close();
-        FileUtil.del(blockFileAppender.getDestFile());
+        blockFileAppender.transferChannelAndClose(targetFileAppender);
+        blockFileAppender.deleteFile();
       }
+      log.debug("{}: mergeBlockFile success", targetFileAppender.getDestFile().getName());
       targetFileAppender.close();
     }
   }
@@ -126,44 +128,30 @@ public class DownFileDataNodeClient {
       if (StringUtils.isEmpty(blockFileName)) {
         return;
       }
-      FileAppender fileAppender;
       switch (FileTransferType.valueOf(transferRequest.getTransferType())) {
         case HEAD:
           //生成写文件客户端
           String localDownloadPath = blockFileDownPathMap.get(blockFileName);
-          if (localDownloadPath == null) {
-            return;
-          }
           String suffixBlockFileName = StringUtils.substringAfterLast(blockFileName, "/");
-          fileAppender = new FileAppender(localDownloadPath,
+          FileAppender fileAppender = new FileAppender(localDownloadPath,
               suffixBlockFileName);
           blockFileAppenderMap.put(blockFileName, fileAppender);
           break;
         case BODY:
-          fileAppender = blockFileAppenderMap
-              .get(blockFileName);
-          if (fileAppender == null) {
-            return;
-          }
-          try {
-            fileAppender.append(transferRequest.getBody());
-          } catch (Exception e) {
-          }
+          log.debug("{}:is downing", blockFileName);
+          blockFileAppenderMap.get(blockFileName).append(transferRequest.getBody());
           break;
         case TAIL:
-          String fileName = transferRequest.getFileName();
-          fileAppender = blockFileAppenderMap.get(fileName);
-          if (fileAppender == null) {
-            return;
-          }
           try {
-            boolean checkFlag = fileAppender
+            log.debug("{}: is reachTail", blockFileName);
+            boolean checkFlag = blockFileAppenderMap.get(blockFileName)
                 .checkBlockCheckCode(transferRequest.getBlockCheckCode());
             //文件校验成功后回写完成状态
             if (checkFlag) {
               AtomicInteger fileCompleteCount = downFileCompleteMap
                   .get(blockFileNameMap.get(transferRequest.getFileName()));
               fileCompleteCount.decrementAndGet();
+              log.debug("{}: down success", blockFileName);
             } else {
               log.error("downFile checkBlockCode false:{}", transferRequest.toString());
             }

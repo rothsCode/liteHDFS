@@ -1,7 +1,6 @@
 package com.rothsCode.litehdfs.datanode.file;
 
 import cn.hutool.core.lang.Assert;
-import com.rothsCode.litehdfs.common.netty.request.FileInfo;
 import com.rothsCode.litehdfs.datanode.handler.FileCallBackHandler;
 import java.io.File;
 import java.io.FileInputStream;
@@ -86,8 +85,4 @@ public class DataFileAppender {
 
   }
 
-  public void complete(FileInfo fileInfo) {
-    fileInfo.setAbsolutePath(destFile.getAbsolutePath());
-    fileCallBackHandler.fileComplete(fileInfo);
-  }
 }

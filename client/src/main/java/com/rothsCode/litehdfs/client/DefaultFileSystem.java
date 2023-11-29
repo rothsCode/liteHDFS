@@ -1,5 +1,6 @@
 package com.rothsCode.litehdfs.client;
 
+import cn.hutool.core.lang.Assert;
 import com.alibaba.fastjson.JSONObject;
 import com.rothsCode.litehdfs.client.fileclient.DownFileDataNodeClient;
 import com.rothsCode.litehdfs.client.fileclient.FileTransferDataNodeClient;
@@ -19,7 +20,6 @@ import java.io.File;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.lang3.StringUtils;
 
 /**
  * @author rothsCode
@@ -181,10 +181,12 @@ public class DefaultFileSystem implements FileSystemClient, LifeCycle {
   }
 
   public ServerResponse downFile(String fileName, String localDownloadPath) {
+    //下载路径处理
+    Assert.notBlank(localDownloadPath, "下载路径不能为空");
     //先发送到nameNode获取文件块对应的dataNode地址
     ClientToNameNodeRequest request = ClientToNameNodeRequest.builder()
         .userName(clientConfig.getUserName()).authToken(clientConfig.getAuthToken())
-        .fileName(fileName).build();
+        .fileName(clientConfig.getStorageDirectory() + fileName).build();
     NettyPacket nettyPacket = NettyPacket
         .buildPacket(JSONObject.toJSONString(request).getBytes(),
             PacketType.GET_DATA_NODE_FOR_FILE.value);
@@ -200,21 +202,16 @@ public class DefaultFileSystem implements FileSystemClient, LifeCycle {
     FileInfo fileInfo = JSONObject
         .parseObject(JSONObject.toJSONString(serverResponse.getData()), FileInfo.class);
     //发生请求到dataNode
-    if (StringUtils.isEmpty(fileInfo.getBlkDataNode())) {
-      return ServerResponse.failByMsg("blkDataNode is empty");
-    }
-    //blk1>dn1,dn2;blk2>dn4,dn5
-    String[] blkDataNodes = fileInfo.getBlkDataNode().split(";");
-    if (blkDataNodes.length == 0) {
+    if (CollectionUtils.isEmpty(fileInfo.getBlkDataNodes())) {
       return ServerResponse.failByMsg("blkDataNode is empty");
     }
 
     //获取到地址后发生请求获取文件块
     DownFileDataNodeClient downFileDataNodeClient = new DownFileDataNodeClient();
-    int blkLength = blkDataNodes.length;
+    int blkLength = fileInfo.getBlkDataNodes().size();
     for (int i = 0; i < blkLength; i++) {
       // 简单取第一个地址 TODO 感知网络最近节点
-      String[] fileDataAddress = blkDataNodes[i].split(">");
+      String[] fileDataAddress = fileInfo.getBlkDataNodes().get(i).split(">");
       String blockFileName = fileDataAddress[0];
       String[] dataNodeAddress = fileDataAddress[1].split(",");
       String[] hostAndPort = dataNodeAddress[1].split(":");
@@ -225,13 +222,18 @@ public class DefaultFileSystem implements FileSystemClient, LifeCycle {
       downFileDataNodeClient.putDataNodeClient(blockFileName, blockDataNodeClient);
       try {
         downFileDataNodeClient
-            .downBlockFile(fileName, blockFileName, localDownloadPath, blkLength - i == 1);
+            .downBlockFile(fileName, blockFileName, clientConfig, blkLength - i == 1);
       } catch (Exception e) {
         log.error("downFile error:{}", e);
         return ServerResponse.failByMsg(e.getMessage());
       }
     }
     return ServerResponse.success();
+  }
+
+  @Override
+  public ServerResponse downFile(String fileName) {
+    return downFile(fileName, clientConfig.getLocalDownloadPath());
   }
 
   @Override

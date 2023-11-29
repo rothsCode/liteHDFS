@@ -22,6 +22,8 @@ public interface FileSystemClient {
   //下载文件
   ServerResponse downFile(String fileName, String localDownloadPath);
 
+  ServerResponse downFile(String fileName);
+
   //获取目录下文件名
   ServerResponse getChildDirs(String filePath);
 

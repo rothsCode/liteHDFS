@@ -121,22 +121,22 @@ public class NetClient implements ISendClient {
      */
     public void startConnect() {
         //重新开启线程避免连接主线程阻塞
-        defaultScheduler.scheduleOnce("连接服务端", () -> {
-            Bootstrap bootstrap = new Bootstrap();
-            bootstrap.group(group)
-                .option(ChannelOption.TCP_NODELAY, true)
-                .option(ChannelOption.SO_KEEPALIVE, true)
-                .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                .channel(NioSocketChannel.class)
-                .handler(baseChannelInitial);
-            try {
-                ChannelFuture channelFuture = bootstrap.connect(hostName, port).sync();
-                startStatus.set(true);
+        defaultScheduler.scheduleOnce("connectServer", () -> {
+          Bootstrap bootstrap = new Bootstrap();
+          bootstrap.group(group)
+              .option(ChannelOption.TCP_NODELAY, true)
+              .option(ChannelOption.SO_KEEPALIVE, true)
+              .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+              .channel(NioSocketChannel.class)
+              .handler(baseChannelInitial);
+          try {
+            ChannelFuture channelFuture = bootstrap.connect(hostName, port).sync();
+            startStatus.set(true);
                 channelFuture.channel().closeFuture()
                     .addListener((ChannelFutureListener) f -> f.channel().close());
                 channelFuture.channel().closeFuture().sync();
             } catch (Exception e) {
-                log.error("连接失败:{}", e);
+            log.error("connect error:{}", e);
             } finally {
                 //重试机制
                 connectedTime++;
@@ -152,8 +152,8 @@ public class NetClient implements ISendClient {
         if (connectedTime < retryTime) {
             startConnect();
         } else {
-            log.error("连接失败超过重试次数");
-            startStatus.set(false);
+          log.error("retryConnect over");
+          startStatus.set(false);
             group.shutdownGracefully();
         }
     }

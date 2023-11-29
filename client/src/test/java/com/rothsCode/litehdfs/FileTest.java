@@ -35,14 +35,6 @@ public class FileTest {
     return FileClientFactory.createFileSystemClient(clientConfig);
   }
 
-  @Test
-  public void testDir() {
-    DefaultFileSystem fileSystem = getClient();
-    //创建目录
-    ServerResponse serverResponse = fileSystem.makeDir("/usr/redis");
-    fileSystem.shutDown();
-    Assert.assertTrue(serverResponse.getSuccess());
-  }
 
   @Test
   public void testUploadFile() {
@@ -57,7 +49,7 @@ public class FileTest {
   @Test
   public void testUploadFileManyBlock() {
     DefaultFileSystem fileSystem = getClient();
-    File file = new File("D:\\logs\\custom4.properties");
+    File file = new File("D:\\tmp\\sync7.txt");
     ServerResponse serverResponse = fileSystem.uploadFile(file);
     fileSystem.shutDown();
     Assert.assertTrue(serverResponse.getSuccess());
@@ -66,44 +58,61 @@ public class FileTest {
   @Test
   public void testDownFile() {
     DefaultFileSystem fileSystem = getClient();
-    ServerResponse serverResponse = fileSystem
-        .downFile("/usr/redis/custom4.properties", "D:\\tmp\\");
+    // sync6.txt
+    ServerResponse serverResponse = fileSystem.downFile("sync7.txt");
     fileSystem.shutDown();
     Assert.assertTrue(serverResponse.getSuccess());
 
   }
 
+  @Test
+  public void testGetChildPath() {
+    DefaultFileSystem fileSystem = getClient();
+    ServerResponse serverResponse = fileSystem
+        .getChildDirs("/usr/redis");
+    Assert.assertTrue(serverResponse.getSuccess());
+    fileSystem.shutDown();
+  }
+
+  @Test
+  public void testMakeDir() {
+    DefaultFileSystem fileSystem = getClient();
+    //创建目录
+    ServerResponse serverResponse = fileSystem.makeDir("/usr/redis/fefg/4533");
+    fileSystem.shutDown();
+    Assert.assertTrue(serverResponse.getSuccess());
+  }
 
   @Test
   public void testManyDir() {
     DefaultFileSystem fileSystem = getClient();
     //创建目录
-    for (int i = 1; i < 5; i++) {
-      fileSystem.makeDir("usr/redis/content" + i);
+    for (int i = 1; i < 10; i++) {
+      fileSystem.makeDir("usr/redis/t/" + i);
     }
     fileSystem.shutDown();
   }
-
-
   @Test
   public void testMultiDir() throws InterruptedException {
     DefaultFileSystem fileSystem = getClient();
     //创建目录
-    ExecutorService executorService = Executors.newFixedThreadPool(30);
-    CountDownLatch countDownLatch = new CountDownLatch(6000);
+    ExecutorService executorService = Executors.newFixedThreadPool(50);
+    CountDownLatch countDownLatch = new CountDownLatch(1000000);
     StopWatch s = new StopWatch();
     s.start();
-    for (int i = 6000; i <= 10000; i++) {
+    final String prePath = "admin/s/txt";
+    for (int i = 1; i <= 1000000; i++) {
       int finalI = i;
       executorService.execute(() -> {
-        fileSystem.makeDir("admin/tem/pic" + finalI);
+        fileSystem.makeDir(prePath + finalI);
         countDownLatch.countDown();
       });
     }
     countDownLatch.await();
     s.stop();
+    executorService.shutdown();
     fileSystem.shutDown();
-    log.error("耗时:" + s.getTime());
+    log.info("耗时:" + s.getTime());
 
   }
 
@@ -178,14 +187,5 @@ public class FileTest {
   }
 
 
-  @Test
-  public void testGetChildPath() {
-    DefaultFileSystem fileSystem = getClient();
-    ServerResponse serverResponse = fileSystem
-        .getChildDirs("/usr/redis");
-    Assert.assertTrue(serverResponse.getSuccess());
-    fileSystem.shutDown();
 
-
-  }
 }

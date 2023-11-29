@@ -1,8 +1,10 @@
 package com.rothsCode.litehdfs.namenode.filetree;
 
 import com.rothsCode.litehdfs.common.netty.request.FileInfo;
+import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -12,7 +14,9 @@ import lombok.NoArgsConstructor;
  * @date 2021/12/6 17:29
  */
 @Data
+@Builder
 @NoArgsConstructor
+@AllArgsConstructor
 public class DirNode {
 
   private String path; //当前节点目录
@@ -24,16 +28,11 @@ public class DirNode {
   private FileInfo fileInfo;
 
   public DirNode(String path) {
+    childNodes = new HashMap<>();
     this.isFileNode = false;
     this.path = path;
-    childNodes = new ConcurrentHashMap<>();
   }
 
-  public DirNode(String path, FileInfo fileInfo) {
-    this.isFileNode = true;
-    this.path = path;
-    this.fileInfo = fileInfo;
-  }
 
 
 }

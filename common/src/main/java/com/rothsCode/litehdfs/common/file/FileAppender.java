@@ -1,7 +1,8 @@
 package com.rothsCode.litehdfs.common.file;
 
 import cn.hutool.core.lang.Assert;
-import com.rothsCode.litehdfs.common.netty.request.FileInfo;
+import com.rothsCode.litehdfs.common.enums.FlushDiskType;
+import com.rothsCode.litehdfs.common.netty.thread.ServiceThread;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -9,8 +10,11 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.concurrent.locks.ReentrantLock;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.commons.io.FileUtils;
 
 /**
  * @author rothsCode
@@ -18,13 +22,37 @@ import org.apache.commons.codec.digest.DigestUtils;
  * @date 2021/11/16 14:54
  */
 @Slf4j
+@Getter
 public class FileAppender {
 
   private RandomAccessFile rds;
   private FileChannel channel;
   private File destFile;
+  private static ReentrantLock syncDiskLock = new ReentrantLock();
+  private FlushDiskType flushDiskType = FlushDiskType.ASYNC_FLUSH;
+  private int flushInterval = 10;
+  private AsyncFlushFileService asyncFlushFileService;
 
   public FileAppender(String storagePath, String fileName) {
+    initFile(storagePath, fileName);
+  }
+
+  public FileAppender(File file) {
+    this.destFile = file;
+    createFileChannel();
+  }
+
+  public FileAppender(String storagePath, String fileName, int flushInterval) {
+    initFile(storagePath, fileName);
+    if (flushInterval == 0) {
+      flushDiskType = FlushDiskType.SYNC_FLUSH;
+    } else {
+      flushDiskType = FlushDiskType.ASYNC_FLUSH;
+      this.flushInterval = flushInterval;
+    }
+  }
+
+  private void initFile(String storagePath, String fileName) {
     int suffixLastIndex = fileName.lastIndexOf("/");
     if (suffixLastIndex > 0) {
       File fileDir = new File(storagePath + fileName.substring(0, suffixLastIndex));
@@ -43,11 +71,6 @@ public class FileAppender {
     createFileChannel();
   }
 
-  public FileAppender(File file) {
-    this.destFile = file;
-    createFileChannel();
-  }
-
   private void createFileChannel() {
     try {
       rds = new RandomAccessFile(destFile, "rw");
@@ -56,50 +79,53 @@ public class FileAppender {
     }
     Assert.notNull(rds, "randomAccessFile create error");
     channel = rds.getChannel();
-  }
-
-  public FileChannel getChannel() {
-    return channel;
-  }
-
-  public RandomAccessFile getRds() {
-    return rds;
-  }
-
-  public File getDestFile() {
-    return destFile;
+    //创建文件连接后开启刷盘任务
+    if (FlushDiskType.ASYNC_FLUSH.equals(flushDiskType)) {
+      asyncFlushFileService = new AsyncFlushFileService();
+      asyncFlushFileService.start();
+    }
   }
 
   /**
-   * 追加写入数据
+   * 异步追加写入数据
    *
    * @param body
    */
   public void append(byte[] body) {
     ByteBuffer byteBuffer = ByteBuffer.allocate(body.length);
     byteBuffer.put(body);
-    // 5、读写切换
-    byteBuffer.flip();
-    while (byteBuffer.hasRemaining()) {
-      try {
-        channel.write(byteBuffer);
-      } catch (IOException e) {
-      }
-    }
+    syncDisk(byteBuffer);
   }
 
   /**
-   * 读取文件流写入目标文件 内存映射提升读写效率
-   *
-   * @param targetFileAppender
+   * @param byteBuffer
    */
-  public void transferChannel(FileAppender targetFileAppender) {
+  public void syncDisk(ByteBuffer byteBuffer) {
+    syncDiskLock.lock();
+    try {
+      // 5、读写切换
+      byteBuffer.flip();
+      while (byteBuffer.hasRemaining()) {
+        channel.write(byteBuffer);
+      }
+      if (FlushDiskType.SYNC_FLUSH.equals(flushDiskType)) {
+        channel.force(false);
+      }
+    } catch (IOException e) {
+      log.error("syncDisk error:{}", e);
+    } finally {
+      syncDiskLock.unlock();
+    }
+
+  }
+
+  public void transferChannelAndClose(FileAppender targetFileAppender) {
     try {
       channel.transferTo(0, channel.size(), targetFileAppender.channel);
+      this.close();
     } catch (IOException e) {
       log.error("readBodyError:{}", e);
     }
-
   }
 
   /**
@@ -111,7 +137,7 @@ public class FileAppender {
       return true;
     } else {
       this.close();
-      //FileUtils.deleteQuietly(destFile);
+      FileUtils.deleteQuietly(destFile);
       return false;
     }
   }
@@ -124,6 +150,7 @@ public class FileAppender {
   public String getFileCheckCode() {
     ByteBuffer byteBuffer = readBody();
     byte[] bytes = byteBuffer.array();
+    //TODO 读取不到数据
     if (bytes[0] == 0) {
       try (FileInputStream fileInputStream = new FileInputStream(destFile)) {
         return DigestUtils.sha512Hex(fileInputStream);
@@ -132,6 +159,26 @@ public class FileAppender {
       }
     }
     return DigestUtils.sha512Hex(bytes);
+  }
+
+  /**
+   * 关闭资源 发送文件消息到nameNode
+   */
+  public void close() {
+    try {
+      if (asyncFlushFileService != null) {
+        asyncFlushFileService.shutdown();
+      }
+      if (channel != null && channel.isOpen()) {
+        channel.force(false);
+        channel.close();
+      }
+      if (rds != null) {
+        rds.close();
+      }
+    } catch (Exception e) {
+      log.error("fileCloseError:{}", e);
+    }
   }
 
   /**
@@ -178,21 +225,34 @@ public class FileAppender {
     }
   }
 
+  public void deleteFile() {
+    FileUtils.deleteQuietly(destFile);
+  }
+
   /**
-   * 关闭资源 发送文件消息到nameNode
+   * 异步刷盘任务
    */
-  public void close() {
-    if (rds != null) {
-      try {
-        channel.close();
-        rds.close();
-      } catch (IOException e) {
-      }
+  class AsyncFlushFileService extends ServiceThread {
+
+    @Override
+    public String getServiceName() {
+      return "asyncFlushFileThread";
     }
 
+    @Override
+    public void run() {
+      while (!this.isStopped()) {
+        this.waitForRunning(flushInterval);
+        try {
+          if (channel.isOpen() && channel.size() > 0) {
+            channel.force(false);
+          }
+        } catch (IOException e) {
+          log.error("{}:syncDisk error:{}", destFile.getName(), e);
+        }
+      }
+
+    }
   }
 
-  public void complete(FileInfo fileInfo) {
-    fileInfo.setAbsolutePath(destFile.getAbsolutePath());
-  }
 }

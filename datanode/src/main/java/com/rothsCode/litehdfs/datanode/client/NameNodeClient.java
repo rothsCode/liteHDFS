@@ -10,6 +10,7 @@ import com.rothsCode.litehdfs.common.netty.request.FileInfo;
 import com.rothsCode.litehdfs.common.netty.request.NettyPacket;
 import com.rothsCode.litehdfs.common.netty.response.ServerResponse;
 import com.rothsCode.litehdfs.common.netty.thread.DefaultScheduler;
+import com.rothsCode.litehdfs.common.protoc.ProtoFileInfo;
 import com.rothsCode.litehdfs.common.util.IPUtil;
 import com.rothsCode.litehdfs.datanode.config.DataNodeConfig;
 import com.rothsCode.litehdfs.datanode.vo.DataNodeStorageInfo;
@@ -55,8 +56,8 @@ public class NameNodeClient implements LifeCycle {
         registerNameNode();
                 //启动心跳任务
                 new DataNodeHeartTask(netClient, dataNodeConfig).start();
-                //发送全量信息
-                sendAllFileInfo(dataNodeStorageInfo.getFileInfos());
+        //发送全量信息
+//                sendAllFileInfo(dataNodeStorageInfo.getFileInfos());
             } else {
                 log.error("nameNodeClient connect fair");
       }
@@ -97,23 +98,22 @@ public class NameNodeClient implements LifeCycle {
       if (response.getPackageType() != PacketType.REPLICA_RECEIVE.value) {
         return ServerResponse.failByMsg("packetType error");
       }
-      ServerResponse serverResponse = JSONObject
+      return JSONObject
           .parseObject(new String(response.getBody()), ServerResponse.class);
-      return serverResponse;
 
     }
 
-    /**
-     * 启动完成后全量上报存储信息(自身节点启动后或者nameNode重启)
-     */
-    public void sendAllFileInfo(List<FileInfo> infoList) {
-      DataNodeRequest dataNodeRequest = DataNodeRequest.builder().healthyStatus(1)
-          .ip(IPUtil.getLocalIP()).fileInfos(infoList).build();
-      dataNodeRequest.setAddress(dataNodeRequest.getIp() + ":" + dataNodeRequest.getPort());
-      NettyPacket nettyPacket = NettyPacket
-          .buildPacket(JSONObject.toJSONString(dataNodeRequest).getBytes(),
-              PacketType.REPORT_STORAGE_INFO.value);
-      netClient.send(nettyPacket);
-    }
+  /**
+   * 启动完成后全量上报存储信息(自身节点启动后或者nameNode重启)
+   */
+  public void sendAllFileInfo(List<ProtoFileInfo> infoList) {
+    DataNodeRequest dataNodeRequest = DataNodeRequest.builder().healthyStatus(1)
+        .ip(IPUtil.getLocalIP()).fileInfos(infoList).build();
+    dataNodeRequest.setAddress(dataNodeRequest.getIp() + ":" + dataNodeRequest.getPort());
+    NettyPacket nettyPacket = NettyPacket
+        .buildPacket(JSONObject.toJSONString(dataNodeRequest).getBytes(),
+            PacketType.REPORT_STORAGE_INFO.value);
+    netClient.send(nettyPacket);
+  }
 
 }

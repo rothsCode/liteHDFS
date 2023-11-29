@@ -23,6 +23,7 @@ public class IPUtil {
    * @return
    */
   public static String getLocalIpByNetcard() {
+
     try {
       for (Enumeration<NetworkInterface> e = NetworkInterface.getNetworkInterfaces();
           e.hasMoreElements(); ) {

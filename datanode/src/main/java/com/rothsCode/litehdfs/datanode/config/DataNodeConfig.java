@@ -21,6 +21,6 @@ public class DataNodeConfig {
     private int heartBeatTime = 5000;
     //dataNode存储地址
     private String dataPath;
-    //单次传输文件大小
-    private int sendFileBufferSize = 1024;
+    //单次传输文件大小 单位byte 1024*1024*4
+    private int sendFileBufferSize = 1024 * 1024 * 4;
 }

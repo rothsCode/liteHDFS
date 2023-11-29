@@ -41,8 +41,7 @@ public class FileDirectoryTest {
   public void testCreateFile() {
     FileDirectoryTree fileDirectoryTree = new FileDirectoryTree();
     String dirPath = "adb/fegg/xxx.jpg";
-    FileInfo fileInfoParam = new FileInfo();
-    fileInfoParam.setAbsolutePath(dirPath);
+    FileInfo fileInfoParam = FileInfo.builder().absolutePath(dirPath).build();
     fileDirectoryTree.makeFileNode(dirPath, fileInfoParam);
     FileInfo fileInfo = fileDirectoryTree.getFileInfoByPath(dirPath);
     Assert.assertTrue(
@@ -53,8 +52,7 @@ public class FileDirectoryTest {
   public void testDeleteFile() {
     FileDirectoryTree fileDirectoryTree = new FileDirectoryTree();
     String dirPath = "adb/fegg/xxx.jpg";
-    FileInfo fileInfoParam = new FileInfo();
-    fileInfoParam.setAbsolutePath(dirPath);
+    FileInfo fileInfoParam = FileInfo.builder().absolutePath(dirPath).build();
     fileDirectoryTree.makeFileNode(dirPath, fileInfoParam);
     Assert.assertTrue(fileDirectoryTree.deleteFileNode(dirPath));
   }

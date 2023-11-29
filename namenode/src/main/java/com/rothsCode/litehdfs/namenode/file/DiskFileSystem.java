@@ -1,12 +1,13 @@
 package com.rothsCode.litehdfs.namenode.file;
 
-import com.alibaba.fastjson.JSONObject;
+import cn.hutool.core.io.FileUtil;
+import com.rothsCode.litehdfs.common.file.FileAppender;
+import com.rothsCode.litehdfs.common.protoc.OperateLog;
 import com.rothsCode.litehdfs.namenode.config.NameNodeConfig;
 import com.rothsCode.litehdfs.namenode.filetree.FileDirectoryTree;
-import com.rothsCode.litehdfs.namenode.vo.PathOperateLog;
 import java.io.File;
-import java.io.IOException;
-import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
@@ -21,35 +22,32 @@ import org.apache.commons.io.FileUtils;
 @Slf4j
 public class DiskFileSystem {
 
-  private final static String CURRENT_FILE_NAME = "current.txt";//当前版本
-  private final static String PREVIOUS_FILE_NAME = "previous.txt";//上一个版本
-  private final static String TEMP_FILE_NAME = "temp.txt";//中间临时版本
-  private final static String EDIT_LOG_NAME = "editLog";//临时修改日志
-  private final static String PREVIOUS_FILE_PRE = "previousHistory";
-  private final static String CURRENT_FILE_DIR = "current\\";
+  private final static String CURRENT_FILE_NAME = "currentImage";//当前版本
+  private final static String PREVIOUS_FILE_NAME = "previousImage";//上一个版本
+  private final static String TEMP_FILE_NAME = "tempImage";//中间临时版本
+  private final static String EDIT_LOG_PATH = "\\namenode\\editLog\\";//临时修改日志
+  private final static String PREVIOUS_FILE_PRE = "previousHistory\\";
   private final static String FILE_IMAGE_DIR = "\\namenode\\fileImage\\";
   private NameNodeConfig nameNodeConfig;
   private FileDirectoryTree fileDirectoryTree;
-  private RandomAccessFile tempFileAppender;
-  private String treeDir;
-  private File tempFile;
+  private String fileImagePath;
   private AtomicBoolean isBuildStatus = new AtomicBoolean(false);//是否正在重启构建
 
   public DiskFileSystem(NameNodeConfig nameNodeConfig, FileDirectoryTree fileDirectoryTree) {
     this.fileDirectoryTree = fileDirectoryTree;
     this.nameNodeConfig = nameNodeConfig;
-    treeDir = nameNodeConfig.getFileTreePath() + FILE_IMAGE_DIR;
-    File fileDir = new File(treeDir);
+    fileImagePath = nameNodeConfig.getNameNodePath() + FILE_IMAGE_DIR;
+    File fileDir = new File(fileImagePath);
     if (!fileDir.exists()) {
       fileDir.mkdirs();
     }
-    File previousDir = new File(treeDir + PREVIOUS_FILE_PRE);
+    File previousDir = new File(fileImagePath + PREVIOUS_FILE_PRE);
     if (!previousDir.exists()) {
       previousDir.mkdirs();
     }
-    File currentDir = new File(treeDir + CURRENT_FILE_DIR);
-    if (!currentDir.exists()) {
-      currentDir.mkdirs();
+    File editParentFile = new File(nameNodeConfig.getNameNodePath() + EDIT_LOG_PATH);
+    if (!editParentFile.exists()) {
+      editParentFile.mkdirs();
     }
   }
 
@@ -58,54 +56,63 @@ public class DiskFileSystem {
    * 先将更新文件写入temp文件,再將previous文件更名為previous_當前时间， 再将current 更名为previous 最后将temp文件更改为current
    * 如果写入失败则删除temp
    */
-  public boolean storageFileTreeDiskFile() {
+  public boolean storageFsImage() {
     if (!fileDirectoryTree.getUpdateFlag().get()) {
       return false;
     }
+    log.info("fsImage start storageFile");
+    long startStorageTime = System.currentTimeMillis();
     // previous,current,temp 三个镜像文件
+    FileAppender temFileAppender = null;
     try {
-      tempFile = new File(treeDir + TEMP_FILE_NAME);
-      if (!tempFile.exists()) {
-        boolean createFlag = tempFile.createNewFile();
-        if (!createFlag) {
-          log.info("当前镜像文件目录生成失败");
-        }
+      // append tempImage
+      File temFile = new File(fileImagePath + TEMP_FILE_NAME);
+      if (temFile.exists()) {
+        temFile.delete();
       }
-      tempFileAppender = new RandomAccessFile(tempFile, "rw");
-      tempFileAppender.seek(tempFileAppender.length());
-      log.debug("镜像开始落盘");
-      byte[] fsImage = fileDirectoryTree.getFsImage();
-      tempFileAppender.write(fsImage);
+      temFileAppender = new FileAppender(fileImagePath, TEMP_FILE_NAME);
+      ByteBuffer fsImageBuffer = fileDirectoryTree.getFsImage();
+      temFileAppender.syncDisk(fsImageBuffer);
+      temFileAppender.close();
       //previous->previous-time
-      File previousFile = new File(treeDir + PREVIOUS_FILE_NAME);
-      if (previousFile.exists()) {
-        File previousHistoryFile = new File(
-            treeDir + PREVIOUS_FILE_PRE + "\\" + +System.currentTimeMillis() + "_"
-                + PREVIOUS_FILE_NAME);
-        FileUtils.moveFile(previousFile, previousHistoryFile);
+      File previousFile = new File(fileImagePath + PREVIOUS_FILE_NAME);
+      if (nameNodeConfig.isStorageFsImageHistory() && previousFile.exists()) {
+        String historyFileName = System.currentTimeMillis() + "_" + PREVIOUS_FILE_NAME;
+        FileUtil.rename(previousFile, fileImagePath + PREVIOUS_FILE_PRE + historyFileName, true);
       }
       //current->previous
-      File currentFile = new File(treeDir + CURRENT_FILE_DIR + "\\" + CURRENT_FILE_NAME);
+      File currentFile = new File(fileImagePath + CURRENT_FILE_NAME);
       if (currentFile.exists()) {
-        File newPreviousFile = new File(treeDir + PREVIOUS_FILE_NAME);
-        FileUtils.moveFile(currentFile, newPreviousFile);
+        FileUtil.rename(currentFile, fileImagePath + PREVIOUS_FILE_NAME, true);
       }
       //tem->current
-      tempFileAppender.close();
-      File newFile = new File(treeDir + CURRENT_FILE_DIR + "\\" + CURRENT_FILE_NAME);
-      FileUtils.moveFile(tempFile, newFile);
+      FileUtil.rename(temFile, fileImagePath + CURRENT_FILE_NAME, true);
       fileDirectoryTree.getUpdateFlag().set(false);
-      log.debug("镜像落盘成功");
+      long maxTxId = fileDirectoryTree.getMaxTxId();
+      // 镜像存储成功后删除检查点之前的操作日志
+      File editParentFile = new File(nameNodeConfig.getNameNodePath() + EDIT_LOG_PATH);
+      if (editParentFile.exists() && editParentFile.isDirectory()) {
+        File[] editFiles = editParentFile.listFiles();
+        if (editFiles != null && editFiles.length > 0) {
+          for (File editFile : editFiles) {
+            String[] startAndEndTxId = editFile.getName().split("_");
+            long endTxId = Long.parseLong(startAndEndTxId[1]);
+            if (maxTxId >= endTxId) {
+              FileUtils.deleteQuietly(editFile);
+            }
+          }
+        }
+      }
+      long endStorageTime = System.currentTimeMillis();
+      log.info("fsImage storageDisk success cost:{}ms", endStorageTime - startStorageTime);
       return true;
     } catch (Exception e) {
-      tempFile.delete();
+      log.error("storageFsImage error:{}", e);
       return false;
     } finally {
-      if (tempFileAppender != null) {
-        try {
-          tempFileAppender.close();
-        } catch (IOException e) {
-        }
+      if (temFileAppender != null) {
+        //删除临时文件
+        temFileAppender.deleteFile();
       }
     }
 
@@ -114,116 +121,108 @@ public class DiskFileSystem {
   /**
    * 加载磁盘文件解析成文件目录树内存数据,namenode故障重启后调用
    */
-  public void loadDiskParseData() {
-    RandomAccessFile rds = null;
-    try {
-      isBuildStatus.set(true);
-      //1 加载全量镜像文件  先看temp文件是否存在，再看current文件是否存在
-      File dataFile = new File(treeDir + TEMP_FILE_NAME);
-      if (!dataFile.exists()) {
-        dataFile = new File(treeDir + CURRENT_FILE_DIR + CURRENT_FILE_NAME);
-      }
-      log.info("开始解析构造镜像文件");
-      if (dataFile.exists()) {
-        //1加载主镜像文件
-        rds = new RandomAccessFile(dataFile, "r");
-        if (rds.length() > 0) {
-          byte[] dataByte = new byte[(int) rds.length()];
-          rds.read(dataByte);
-          //恢复数据
-          fileDirectoryTree.recoverFs(dataByte);
-        }
-      }
-      //2加载editLog文件
-      File editParentFile = new File(treeDir + EDIT_LOG_NAME);
-      if (editParentFile.exists() && editParentFile.isDirectory()) {
-        File[] editFiles = editParentFile.listFiles();
-        if (editFiles != null && editFiles.length > 0) {
-          for (File editFile : editFiles) {
-            RandomAccessFile editRds = new RandomAccessFile(editFile, "r");
-            byte[] editByte = new byte[(int) editRds.length()];
-            editRds.read(editByte);
-            List<PathOperateLog> editLog = JSONObject
-                .parseArray(new String(editByte), PathOperateLog.class);
-            fileDirectoryTree.buildEditLog(editLog);
-            editRds.close();
+  public void recoverFileImage() {
+    isBuildStatus.set(true);
+    log.info("start recoverFileImage");
+    long startRecoverTime = System.currentTimeMillis();
+    //1 加载全量镜像文件  先看temp文件是否存在，再看current文件是否存在
+    File dataFile = new File(fileImagePath + TEMP_FILE_NAME);
+    if (!dataFile.exists()) {
+      dataFile = new File(fileImagePath + CURRENT_FILE_NAME);
+    }
+    long maxTxId = 0;
+    if (dataFile.exists()) {
+      //1加载主镜像文件
+      long startBuildFileTreeTime = System.currentTimeMillis();
+      FileAppender imageFileAppender = new FileAppender(dataFile);
+      ByteBuffer imageBuffer = imageFileAppender.readBody();
+      imageFileAppender.close();
+      //恢复数据
+      fileDirectoryTree.recoverFs(imageBuffer);
+      log.info("buildFileTreeTime complete cost:{}ms",
+          System.currentTimeMillis() - startBuildFileTreeTime);
+      maxTxId = fileDirectoryTree.getMaxTxId();
+    }
+    //2加载包含txId检查点以及之后的editLog文件
+    List<File> deleteFiles = new ArrayList<>();
+    File editParentFile = new File(nameNodeConfig.getNameNodePath() + EDIT_LOG_PATH);
+    if (editParentFile.exists() && editParentFile.isDirectory()) {
+      File[] editFiles = editParentFile.listFiles();
+      if (editFiles != null && editFiles.length > 0) {
+        log.info("start recoverEditLog");
+        for (File editFile : editFiles) {
+          if (editFile.length() == 0) {
+            continue;
           }
-        }
-        //3重新构建后镜像再次落盘保存镜像
-        boolean buildFlag = storageFileTreeDiskFile();
-        //4镜像落盘成功后删除变更日志
-        if (buildFlag) {
-          FileUtils.deleteDirectory(editParentFile);
+          String[] startAndEndTxId = editFile.getName().split("_");
+          long startTxId = Long.parseLong(startAndEndTxId[0]);
+          long endTxId = Long.parseLong(startAndEndTxId[1]);
+          if (maxTxId > startTxId) {
+            deleteFiles.add(editFile);
+            if (maxTxId > endTxId) {
+              continue;
+            }
+          }
+          FileAppender fileAppender = new FileAppender(editFile);
+          ByteBuffer byteBuffer = fileAppender.readBody();
+          fileAppender.close();
+          List<OperateLog> editLogs = new ArrayList<>();
+          long fileMaxTxId = 0;
+          while (byteBuffer.remaining() > 4) {
+            try {
+              int bodyLength = byteBuffer.getInt();
+              byte[] bodyBytes = new byte[bodyLength];
+              byteBuffer.get(bodyBytes);
+              OperateLog operateLog = OperateLog.parseFrom(bodyBytes);
+              editLogs.add(operateLog);
+              if (operateLog.getTxId() > fileMaxTxId) {
+                fileMaxTxId = operateLog.getTxId();
+              }
+            } catch (Exception e) {
+              log.error("{}:editFile recoverEditLogError:{}", editFile.getName(), e);
+              deleteFiles.remove(editFile);
+              break;
+            }
+          }
+          fileDirectoryTree.buildEditLog(editLogs);
+          fileDirectoryTree.setMaxTxId(fileMaxTxId);
         }
       }
-
-    } catch (Exception e) {
-    } finally {
-      isBuildStatus.set(false);
-      try {
-        if (rds != null) {
-          rds.close();
-        }
-      } catch (IOException e) {
+      //3重新构建后镜像再次落盘保存镜像
+      boolean buildFlag = storageFsImage();
+      //4镜像落盘成功后删除变更日志
+      if (buildFlag) {
+        deleteFiles.forEach(FileUtil::del);
       }
     }
+    isBuildStatus.set(false);
+    log.info("recoverImage complete cost:{}ms", System.currentTimeMillis() - startRecoverTime);
   }
 
   /**
    * 将目录操作日志刷入磁盘
    */
-  public void savePathOperateLog(PathOperateLogBuffer PathOperateLogBuffer) {
-    if (PathOperateLogBuffer.getIsNowFlush().get() || !PathOperateLogBuffer.getIsFLushData()) {
-      return;
-    }
-    PathOperateLogBuffer.getIsNowFlush().compareAndSet(false, true);
-    while (isBuildStatus.get()) {
-      log.info("元数据正在重新构建---");
-      try {
-        //发生在nameNode重启过程中需要等待
-        Thread.sleep(1000);
-      } catch (InterruptedException e) {
+  public void batchFlushPathOperateLog(OperateLogDoubleBuffer operateLogDoubleBuffer) {
+    synchronized (this) {
+      if (operateLogDoubleBuffer.isNowFlush()
+          || operateLogDoubleBuffer.getFlushBuffer().position() <= 0) {
+        return;
       }
+      operateLogDoubleBuffer.setIsNowFlush(true);
     }
-    log.info("editLog开始落盘");
-    long currentIndex = PathOperateLogBuffer.getCurrentFlushIndex();
-    long startIndex = PathOperateLogBuffer.getStartFlushIndex();
-    File editParentFile = new File(treeDir + EDIT_LOG_NAME);
-    if (!editParentFile.exists()) {
-      editParentFile.mkdirs();
-    }
-    File editFile = new File(
-        treeDir + EDIT_LOG_NAME + "\\" + startIndex + "_" + currentIndex + ".txt");
-    if (editFile.exists()) {
-      return;
-    }
-    RandomAccessFile rds = null;
-    try {
-      boolean createFlag = editFile.createNewFile();
-      if (!createFlag) {
-        log.error("当前editLog文件生成失败");
-      }
-      rds = new RandomAccessFile(editFile, "rw");
-      rds.seek(rds.length());
-      byte[] bytes = JSONObject.toJSONString(PathOperateLogBuffer.getFlushLogList()).getBytes();
-      //转byte数组
-      rds.write(bytes);
-    } catch (Exception e) {
-      log.error("write editLog error:{}", e);
-    } finally {
-      //变更状态
-      PathOperateLogBuffer.setLastFlushIndex(currentIndex);
-      PathOperateLogBuffer.clearFlushList();
-      PathOperateLogBuffer.setIsFLushData(false);
-      if (rds != null) {
-        try {
-          rds.close();
-        } catch (IOException e) {
-        }
-      }
-    }
-    log.info("当前日志段落盘成功" + startIndex + "_" + currentIndex);
-    PathOperateLogBuffer.getIsNowFlush().set(false);
+    log.debug("operateLog start flushDisk");
+    long endIndex = operateLogDoubleBuffer.getCurrentFlushIndex();
+    long startIndex = operateLogDoubleBuffer.getStartFlushIndex();
+    FileAppender editLogFileAppender = new FileAppender(
+        nameNodeConfig.getNameNodePath() + EDIT_LOG_PATH,
+        startIndex + "_" + endIndex);
+    editLogFileAppender.syncDisk(operateLogDoubleBuffer.getFlushBuffer());
+    editLogFileAppender.close();
+    //变更状态
+    operateLogDoubleBuffer.setLastFlushIndex(endIndex);
+    operateLogDoubleBuffer.clearFlushBuffer();
+    operateLogDoubleBuffer.setIsNowFlush(false);
+    log.debug("operateLog flush success" + startIndex + "_" + endIndex);
   }
 
 

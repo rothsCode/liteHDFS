@@ -1,6 +1,8 @@
 package com.rothsCode.litehdfs.namenode.server;
 
+import cn.hutool.core.collection.CollectionUtil;
 import com.alibaba.fastjson.JSONObject;
+import com.rothsCode.litehdfs.common.enums.FlushDiskType;
 import com.rothsCode.litehdfs.common.enums.PacketType;
 import com.rothsCode.litehdfs.common.netty.handler.AbstractDataHandler;
 import com.rothsCode.litehdfs.common.netty.request.ClientToNameNodeRequest;
@@ -11,14 +13,16 @@ import com.rothsCode.litehdfs.common.netty.response.FileResponse;
 import com.rothsCode.litehdfs.common.netty.response.ServerResponse;
 import com.rothsCode.litehdfs.common.netty.thread.DefaultScheduler;
 import com.rothsCode.litehdfs.common.netty.vo.DataNodeInfo;
+import com.rothsCode.litehdfs.common.protoc.OperateLog;
+import com.rothsCode.litehdfs.common.protoc.ProtoFileInfo;
 import com.rothsCode.litehdfs.datanode.DataNodeInfoManager;
 import com.rothsCode.litehdfs.namenode.config.NameNodeConfig;
+import com.rothsCode.litehdfs.namenode.file.DefaultOperateLogStore;
 import com.rothsCode.litehdfs.namenode.file.DiskFileSystem;
-import com.rothsCode.litehdfs.namenode.file.PathOperateLogBuffer;
+import com.rothsCode.litehdfs.namenode.file.OperateLogDoubleBuffer;
 import com.rothsCode.litehdfs.namenode.filetree.DirNode;
 import com.rothsCode.litehdfs.namenode.filetree.FileDirectoryTree;
 import com.rothsCode.litehdfs.namenode.user.UserManager;
-import com.rothsCode.litehdfs.namenode.vo.PathOperateLog;
 import com.rothsCode.litehdfs.namenode.vo.PathOperateType;
 import io.netty.channel.ChannelHandlerContext;
 import java.util.List;
@@ -40,11 +44,13 @@ public class NameNodeApiHandler extends AbstractDataHandler {
   private DataNodeInfoManager dataNodeManager;
   private FileDirectoryTree fileDirectoryTree;
   private Executor executor;
-  private PathOperateLogBuffer PathOperateLogBuffer;
+  private OperateLogDoubleBuffer operateLogDoubleBuffer;
   private DefaultScheduler defaultScheduler;
   private DiskFileSystem diskFileSystem;
   private UserManager userManager;
   private NameNodeConfig nameNodeConfig;
+  private boolean bufferFlushDisk;
+  private DefaultOperateLogStore defaultOperateLogStore;
 
 
   public NameNodeApiHandler(NameNodeConfig nameNodeConfig, UserManager userManager,
@@ -53,23 +59,33 @@ public class NameNodeApiHandler extends AbstractDataHandler {
     this.nameNodeConfig = nameNodeConfig;
     this.userManager = userManager;
     this.diskFileSystem = diskFileSystem;
-    this.PathOperateLogBuffer = new PathOperateLogBuffer();
     this.dataNodeManager = dataNodeManager;
     this.fileDirectoryTree = fileDirectoryTree;
     this.defaultScheduler = defaultScheduler;
     executor = new ThreadPoolExecutor(0, 65536, 60, TimeUnit.SECONDS,
         new SynchronousQueue<>());
 
-    //元数据变更日志落盘任务
-    if (nameNodeConfig.getEditLogSyncInterval() > 0) {
-      defaultScheduler.schedule("editLogSyncTask", new EditLogRunnable(), 10,
+    //元数据变更日志异步落盘任务
+    if (nameNodeConfig.getEditLogFlushDiskType().equals(FlushDiskType.ASYNC_BUFFER_FLUSH.value)) {
+      this.operateLogDoubleBuffer = new OperateLogDoubleBuffer(nameNodeConfig, diskFileSystem,
+          fileDirectoryTree.getMaxTxId());
+      defaultScheduler.schedule("editLogAsyncFlushDiskTask", new EditLogRunnable(), 10,
           nameNodeConfig.getEditLogSyncInterval(),
           TimeUnit.SECONDS);
+      log.info("editLogAsyncFlushDiskTask started");
+      bufferFlushDisk = true;
+    } else {
+      defaultOperateLogStore = new DefaultOperateLogStore(nameNodeConfig,
+          fileDirectoryTree.getMaxTxId());
+      log.info("defaultOperateLogStore started");
     }
-    //文件树镜像落盘任务
+    //文件树镜像落盘任务,性能考虑落盘周期必须大于等于30分钟
+    //Assert.isTrue(nameNodeConfig.getFsImageSyncInterval()>=30,"fileTreeScheduleTime must greater than 30 minute!");
     defaultScheduler
-        .schedule("storageFileTreeTask", diskFileSystem::storageFileTreeDiskFile, 60, 120,
-            TimeUnit.SECONDS);
+        .schedule("storageFileTreeTask", diskFileSystem::storageFsImage, 1,
+            nameNodeConfig.getFsImageSyncInterval(),
+            TimeUnit.MINUTES);
+    log.info("storageFileTreeTask started");
   }
 
 
@@ -123,7 +139,7 @@ public class NameNodeApiHandler extends AbstractDataHandler {
         break;
       case REPORT_STORAGE_INFO:
         if (request.getFileInfos().size() > 0) {
-          for (FileInfo info : request.getFileInfos()) {
+          for (ProtoFileInfo info : request.getFileInfos()) {
             dataNodeManager.addReplicateFile(request.getAddress(), info);
           }
         }
@@ -133,8 +149,8 @@ public class NameNodeApiHandler extends AbstractDataHandler {
             .parseObject(new String(nettyPacket.getBody()), ClientToNameNodeRequest.class);
         String fileName = downFileRequest.getFileName();
         FileInfo fileInfo = fileDirectoryTree.getFileInfoByPath(fileName);
-        if (fileInfo == null || StringUtils.isEmpty(fileInfo.getBlkDataNode())) {
-          requestWrapper.sendResponse(ServerResponse.failByMsg("file is empty"));
+        if (fileInfo == null || CollectionUtil.isEmpty(fileInfo.getBlkDataNodes())) {
+          requestWrapper.sendResponse(ServerResponse.failByMsg("file is not existed"));
         }
         requestWrapper.sendResponse(ServerResponse.successByData(fileInfo));
         break;
@@ -147,7 +163,7 @@ public class NameNodeApiHandler extends AbstractDataHandler {
           requestWrapper.sendResponse(ServerResponse.successByData(token));
 
         } else {
-          requestWrapper.sendResponse(ServerResponse.failByMsg("登录错误"));
+          requestWrapper.sendResponse(ServerResponse.failByMsg("token error"));
         }
         break;
       case CLIENT_LOGOUT:
@@ -157,11 +173,11 @@ public class NameNodeApiHandler extends AbstractDataHandler {
         if (loginOutFlag) {
           requestWrapper.sendResponse(ServerResponse.success());
         } else {
-          requestWrapper.sendResponse(ServerResponse.failByMsg("退出失败"));
+          requestWrapper.sendResponse(ServerResponse.failByMsg("loginOut fair"));
         }
         break;
       default:
-        log.error("消息类型异常");
+        log.error("packetType error");
 
     }
     return true;
@@ -169,24 +185,19 @@ public class NameNodeApiHandler extends AbstractDataHandler {
 
   private void recordFileDataNodeRelation(NettyPacket nettyPacket,
       RequestWrapper requestWrapper) {
-    FileInfo dataNodeFileDto = JSONObject
-        .parseObject(new String(nettyPacket.getBody()), FileInfo.class);
+    FileInfo fileInfo = JSONObject.parseObject(new String(nettyPacket.getBody()), FileInfo.class);
+    ProtoFileInfo protoFileInfo = fileInfo.encoder();
     //先预写日志再更新内存数据
-    PathOperateLog pathOperateLog = new PathOperateLog();
-    pathOperateLog.setOperateType(PathOperateType.FILE.name());
-    pathOperateLog.setContent(JSONObject.toJSONString(dataNodeFileDto));
-    try {
-      PathOperateLogBuffer.addPathOperateLog(pathOperateLog);
-    } catch (InterruptedException e) {
-      requestWrapper.sendResponse(ServerResponse.fail());
+    OperateLog operateLog = OperateLog.newBuilder()
+        .setOperateType(PathOperateType.FILE.name())
+        .setFileInfo(protoFileInfo)
+        .build();
+    boolean writeLogFlag = writePathOperateLog(operateLog);
+    if (!writeLogFlag) {
+      requestWrapper.sendResponse(ServerResponse.failByMsg("writeLog busy"));
       return;
     }
-    FileInfo fileInfo = fileDirectoryTree.getFileInfoByPath(dataNodeFileDto.getParentFileName());
-    if (fileInfo != null) {
-      fileInfo.setBlkDataNode(fileInfo.getBlkDataNode() + ";" + dataNodeFileDto.getBlkDataNode());
-    } else {
-      fileDirectoryTree.makeFileNode(dataNodeFileDto.getParentFileName(), dataNodeFileDto);
-    }
+    fileDirectoryTree.saveFileInfo(fileInfo);
     requestWrapper.sendResponse(ServerResponse.success());
   }
 
@@ -194,12 +205,12 @@ public class NameNodeApiHandler extends AbstractDataHandler {
     ClientToNameNodeRequest createFileRequest = JSONObject
         .parseObject(new String(nettyPacket.getBody()), ClientToNameNodeRequest.class);
     String realFileName =
-        createFileRequest.getPath() + "/"
-            + "BLK" + createFileRequest.getBlockIndex() + "-" + createFileRequest.getFileName();
+        createFileRequest.getPath() + "BLK" + createFileRequest.getBlockIndex() + "-"
+            + createFileRequest.getFileName();
     //返回最优的数据节点
     List<DataNodeInfo> dataNodeInfoList = dataNodeManager.chooseBestDataNode();
     FileResponse fileResponse = FileResponse.builder().fileName(realFileName)
-        .parentFileName(createFileRequest.getPath() + "/" + createFileRequest.getFileName())
+        .parentFileName(createFileRequest.getPath() + createFileRequest.getFileName())
         .dataNodeInfos(dataNodeInfoList).build();
     requestWrapper.sendResponse(ServerResponse.successByData(fileResponse));
   }
@@ -209,23 +220,37 @@ public class NameNodeApiHandler extends AbstractDataHandler {
         .parseObject(new String(nettyPacket.getBody()), ClientToNameNodeRequest.class);
     String dirPath = clientToNameNodeRequest.getPath();
     checkToken(requestWrapper, clientToNameNodeRequest);
-    if (dirPath == null) {
-      return true;
+    if (StringUtils.isEmpty(dirPath)) {
+      return false;
     }
-    //WAL预写日志
-    //记录操作日志备份磁盘
-    PathOperateLog pathOperateLog = new PathOperateLog();
-    pathOperateLog.setOperateType(PathOperateType.ADD.name());
-    pathOperateLog.setContent(dirPath);
-    try {
-      PathOperateLogBuffer.addPathOperateLog(pathOperateLog);
-    } catch (InterruptedException e) {
-      requestWrapper.sendResponse(ServerResponse.fail());
-      return true;
+
+    //WAL预写日志 记录操作日志备份磁盘 判断是同步刷盘还是异步刷盘
+    OperateLog pathOperateLog = OperateLog.newBuilder()
+        .setOperateType(PathOperateType.PATH.name())
+        .setPath(dirPath)
+        .build();
+    boolean writeLogFlag = writePathOperateLog(pathOperateLog);
+    if (!writeLogFlag) {
+      requestWrapper.sendResponse(ServerResponse.failByMsg("writeLog busy"));
+      return false;
     }
     boolean mkrFlag = fileDirectoryTree.makeDir(dirPath);
     requestWrapper.sendResponse(ServerResponse.responseStatus(mkrFlag));
     return false;
+  }
+
+  private boolean writePathOperateLog(OperateLog pathOperateLog) {
+    long txId;
+    if (bufferFlushDisk) {
+      txId = operateLogDoubleBuffer.addOperateLog(pathOperateLog);
+    } else {
+      txId = defaultOperateLogStore.syncOperateLogDisk(pathOperateLog);
+    }
+    if (txId == 0) {
+      return false;
+    }
+    fileDirectoryTree.setMaxTxId(txId);
+    return true;
   }
 
   private void checkToken(RequestWrapper requestWrapper,
@@ -245,13 +270,13 @@ public class NameNodeApiHandler extends AbstractDataHandler {
 
     @Override
     public void run() {
-      while (true) {
         try {
-          diskFileSystem.savePathOperateLog(PathOperateLogBuffer);
+          //定时交换队列
+          operateLogDoubleBuffer.exchangeDoubleBuffer();
+          diskFileSystem.batchFlushPathOperateLog(operateLogDoubleBuffer);
         } catch (Exception e) {
-          log.error("loadPathOperateLog error:{}", e);
+          log.error("batchSavePathOperateLog error:{}", e);
         }
-      }
     }
   }
 }

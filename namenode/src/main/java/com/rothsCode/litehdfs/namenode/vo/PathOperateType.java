@@ -8,8 +8,6 @@ package com.rothsCode.litehdfs.namenode.vo;
  */
 
 public enum PathOperateType {
-  ADD,
+  PATH,
   FILE,
-  EDIT,
-  REMOVE
 }

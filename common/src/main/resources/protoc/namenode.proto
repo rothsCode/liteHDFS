@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+option optimize_for =SPEED;
+option java_multiple_files = true;
+option java_package = "com.rothsCode.litehdfs.common.protoc";
+
+message ProtoNode {
+  string path = 1;
+  bool isFileNode = 2;
+  map<string, ProtoNode> childNodes = 3;
+  ProtoFileInfo fileInfo = 4;
+}
+message OperateLog {
+  string operateType = 1;
+  string path = 2;
+  int64 txId = 3;
+  ProtoFileInfo fileInfo = 4;
+}
+
+message ProtoFileInfo {
+   int32 fileSize = 1;
+   string fileType = 2;
+   string fileName = 3;
+   string parentFileName = 4;
+   string absolutePath = 5;
+   int64 createTime = 6;
+   int64 updateTime = 7;
+   string createUser = 8;
+   string updateUser = 9;
+   string hostName = 10;
+   repeated string blkDataNodes = 11;
+}

@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -181,14 +182,16 @@ public class DataNodeServerHandler extends AbstractDataHandler {
       FileAppender fileAppender) {
     int bufferSize = dataNodeConfig.getSendFileBufferSize();
     try {
-      if (bufferSize > fileAppender.getChannel().size()) {
-        bufferSize = (int) fileAppender.getChannel().size();
-      }
-      ByteBuffer buff = ByteBuffer.allocate(bufferSize);
-      while (fileAppender.getChannel().read(buff) > 0) {
+      long dataSize = fileAppender.getDestFile().length();
+      while (dataSize > 0) {
+        bufferSize = (int) Math.min(dataSize, bufferSize);
+        dataSize = dataSize - bufferSize;
+        ByteBuffer buff = ByteBuffer.allocate(bufferSize);
+        fileAppender.getChannel().read(buff);
         ClientTransferFileInfo bodyFileInfo = ClientTransferFileInfo.builder()
             .fileName(fileName).transferType(FileTransferType.BODY.name()).body(buff.array())
             .build();
+        log.debug("{}:sendBodyData:{}size", fileName, bufferSize);
         requestWrapper.sendResponse(bodyFileInfo);
         buff.clear();
       }
@@ -359,12 +362,12 @@ public class DataNodeServerHandler extends AbstractDataHandler {
               return;
             }
             String[] blkDataAddressInfoRelation = blkDataAddressInfo.split(">");
-            //落盘后更新data节点文件索引以及向nameNode发送存储成功的消息
-            FileInfo fileInfo = FileInfo.builder()
-                .createTime(System.currentTimeMillis()).fileName(transferRequest.getFileName())
+            //落盘后更新data节点文件索引以及向nameNode发送存储成功的消息 blockFileName>blockDataAddress
+            FileInfo fileInfo = FileInfo.builder().fileName(transferRequest.getFileName())
                 .parentFileName(blkDataAddressInfoRelation[0])
-                .blkDataNode(transferRequest.getFileName() + ">" + blkDataAddressInfoRelation[1])
-                .build();
+                .createTime(System.currentTimeMillis())
+                .blkDataNodes(Collections.singletonList(
+                    transferRequest.getFileName() + ">" + blkDataAddressInfoRelation[1])).build();
             ServerResponse nameNodeAckResponse = fileCallBackHandler.fileComplete(fileInfo);
             if (!nameNodeAckResponse.getSuccess()) {
               requestWrapper

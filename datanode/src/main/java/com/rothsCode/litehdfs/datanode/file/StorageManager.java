@@ -57,7 +57,7 @@ public class StorageManager {
           if (childFile.isFile()) {
             FileInfo fileInfo = FileInfo.builder().fileName(childFile.getName())
                 .absolutePath(childFile.getAbsolutePath())
-                .fileSize(childFile.length()).createTime(childFile.lastModified()).build();
+                .fileSize((int) childFile.length()).createTime(childFile.lastModified()).build();
             fileInfos.add(fileInfo);
             userSpace += file.getUsableSpace();
           }

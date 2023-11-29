@@ -17,7 +17,6 @@
   </build>
   <dependencyManagement>
     <dependencies>
-
       <!--slf4j统一日志接口依赖包-->
       <dependency>
         <artifactId>slf4j-api</artifactId>
@@ -127,7 +126,7 @@
     <netty.version>4.1.42.Final</netty.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-    <protobuf.version>3.3.0</protobuf.version>
+    <protobuf.version>3.21.10</protobuf.version>
     <rothsCode.dfs.client.version>1.0</rothsCode.dfs.client.version>
     <rothsCode.dfs.common.version>1.0.0-SNAPSHOT</rothsCode.dfs.common.version>
     <rothsCode.dfs.datanode.version>1.0</rothsCode.dfs.datanode.version>

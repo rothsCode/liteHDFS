@@ -2,6 +2,7 @@ package com.rothsCode.litehdfs.datanode;
 
 import com.rothsCode.litehdfs.common.netty.request.FileInfo;
 import com.rothsCode.litehdfs.common.netty.vo.DataNodeInfo;
+import com.rothsCode.litehdfs.common.protoc.ProtoFileInfo;
 import com.rothsCode.litehdfs.namenode.config.NameNodeConfig;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -45,16 +46,22 @@ public class DataNodeInfoManager {
             .scheduleWithFixedDelay(new HeartBeatCheckThread(), 10, 10, TimeUnit.SECONDS);
     }
 
-    public synchronized void addReplicateFile(String hostName, FileInfo fileInfo) {
-        DataNodeInfo dataNodeInfo = dataNodes.get(hostName);
-        if (dataNodeInfo == null) {
-            return;
-        }
-        dataNodeInfo.addFileSize(fileInfo.getFileSize());
-        copyDataNodeByFile.computeIfAbsent(fileInfo.getFileName(), k -> new ArrayList<>())
-            .add(dataNodeInfo);
-        filesByData.computeIfAbsent(fileInfo.getHostName(), k -> new ArrayList<>()).add(fileInfo);
+  public synchronized void addReplicateFile(String hostName, ProtoFileInfo protoFileInfo) {
+    DataNodeInfo dataNodeInfo = dataNodes.get(hostName);
+    if (dataNodeInfo == null) {
+      return;
     }
+    dataNodeInfo.addFileSize(protoFileInfo.getFileSize());
+    copyDataNodeByFile.computeIfAbsent(protoFileInfo.getFileName(), k -> new ArrayList<>())
+        .add(dataNodeInfo);
+    FileInfo fileInfo = FileInfo.builder()
+        .parentFileName(protoFileInfo.getParentFileName())
+        .absolutePath(protoFileInfo.getAbsolutePath())
+        .fileName(protoFileInfo.getFileName())
+        .createTime(protoFileInfo.getCreateTime())
+        .blkDataNodes(protoFileInfo.getBlkDataNodesList()).build();
+    filesByData.computeIfAbsent(fileInfo.getHostName(), k -> new ArrayList<>()).add(fileInfo);
+  }
 
     /**
      * 默认查询可用容量优先的数据节点 TODO 机架感知

@@ -26,24 +26,29 @@ public class ClientConfig {
   /**
    * 存储目录
    */
-  private String storageDirectory = "/usr/redis";
+  private String storageDirectory = "/usr/redis/";
+
+  /**
+   * 默认本地下载地址
+   */
+  private String localDownloadPath = "D:\\tmp\\down\\";
 
   private String authToken;
 
   private int retryTime = 5;
 
   /**
-   * 切分文件块大小单位默认128M 128*1024*1024 单位kb
+   * 切分文件块大小单位默认128M 128*1024*1024 单位byte
    */
-  private long fileBlockSize = 1024;
+  private long fileBlockSize = 1024 * 1024 * 24;
 
   /**
-   * 对block 以packetSize为单位传输 单位byte
+   * 对block 以packetSize为单位传输 单位byte 1024 * 1024
    */
   private long fileBlockPacketSize = 1024 * 1024;
 
   /**
-   * 下载文件超时时间 单位秒
+   * 下载文件超时时间 单位秒 针对小文件数据
    */
-  private long downFileTimeOutSeconds = 60;
+  private int downFileTimeOutSeconds = 60;
 }
